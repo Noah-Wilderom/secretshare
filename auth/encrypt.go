@@ -8,7 +8,6 @@ import (
 	"os/exec"
 )
 
-// GetGPGFingerprint retrieves the fingerprint of the default GPG key
 func GetGPGFingerprint() (string, error) {
 	cmd := exec.Command("gpg", "--list-secret-keys", "--with-colons")
 	output, err := cmd.Output()
@@ -16,7 +15,6 @@ func GetGPGFingerprint() (string, error) {
 		return "", fmt.Errorf("failed to list GPG keys: %w", err)
 	}
 
-	// Parse output to get the fingerprint
 	lines := bytes.Split(output, []byte("\n"))
 	for _, line := range lines {
 		fields := bytes.Split(line, []byte(":"))
@@ -29,15 +27,12 @@ func GetGPGFingerprint() (string, error) {
 	return "", fmt.Errorf("no GPG fingerprint found")
 }
 
-// EncryptFile encrypts a file for a specific GPG recipient and returns the encrypted data
 func EncryptFile(filePath string, recipientFingerprint string) ([]byte, error) {
-	// Read the file
 	fileData, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Encrypt using GPG
 	cmd := exec.Command("gpg", "--encrypt", "--recipient", recipientFingerprint, "--trust-model", "always", "--armor")
 	cmd.Stdin = bytes.NewReader(fileData)
 
@@ -52,9 +47,7 @@ func EncryptFile(filePath string, recipientFingerprint string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// DecryptData decrypts GPG-encrypted data and writes it to the specified output file
 func DecryptData(encryptedData []byte, outputPath string) error {
-	// Decrypt using GPG
 	cmd := exec.Command("gpg", "--decrypt", "--batch", "--yes")
 	cmd.Stdin = bytes.NewReader(encryptedData)
 
@@ -66,7 +59,6 @@ func DecryptData(encryptedData []byte, outputPath string) error {
 		return fmt.Errorf("GPG decryption failed: %v\nStderr: %s", err, stderr.String())
 	}
 
-	// Write decrypted data to file
 	if err := os.WriteFile(outputPath, stdout.Bytes(), 0600); err != nil {
 		return fmt.Errorf("failed to write decrypted file: %w", err)
 	}
@@ -74,7 +66,6 @@ func DecryptData(encryptedData []byte, outputPath string) error {
 	return nil
 }
 
-// StreamEncryptFile encrypts a file and writes encrypted chunks to a writer
 func StreamEncryptFile(filePath string, recipientFingerprint string, writer io.Writer) error {
 	encryptedData, err := EncryptFile(filePath, recipientFingerprint)
 	if err != nil {
@@ -85,9 +76,7 @@ func StreamEncryptFile(filePath string, recipientFingerprint string, writer io.W
 	return err
 }
 
-// StreamDecryptData reads encrypted data from a reader and decrypts it to a file
 func StreamDecryptData(reader io.Reader, outputPath string) error {
-	// Read all encrypted data
 	encryptedData, err := io.ReadAll(reader)
 	if err != nil {
 		return fmt.Errorf("failed to read encrypted data: %w", err)

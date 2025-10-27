@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
+
 	"github.com/Noah-Wilderom/secretshare/auth"
+	"golang.design/x/clipboard"
+
 	"io"
 	"log"
 	mrand "math/rand"
@@ -20,6 +23,11 @@ const (
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	err := clipboard.Init()
+	if err != nil {
+		panic(err)
+	}
 
 	sourcePort := flag.Int("sp", 0, "Source port number")
 	dest := flag.String("d", "", "Destination multiaddr string")
@@ -40,7 +48,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Validate host requirements
 	isHost := *dest == ""
 	if isHost && *filePath == "" {
 		fmt.Printf("Error: Host mode requires a file to share. Use -file flag.\n")
@@ -48,8 +55,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// If debug is enabled, use a constant random source to generate the peer ID. Only useful for debugging,
-	// off by default. Otherwise, it uses rand.Reader.
 	var r io.Reader
 	if *debug {
 		// Use the port number as the randomness source.

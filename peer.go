@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"os/exec"
 
 	"github.com/Noah-Wilderom/secretshare/auth"
 
@@ -32,6 +34,45 @@ func NewPeer(port int, r io.Reader) *Peer {
 	}
 }
 
+func getLocalIP() (string, error) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "", err
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String(), nil
+			}
+		}
+	}
+
+	return "", errors.New("no network interface found")
+}
+
+func copyToClipboard(text string) error {
+	cmd := exec.Command("pbcopy")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	if _, err := in.Write([]byte(text)); err != nil {
+		return err
+	}
+
+	if err := in.Close(); err != nil {
+		return err
+	}
+
+	return cmd.Wait()
+}
+
 func (p *Peer) NewHost() (host.Host, error) {
 	// Creates a new RSA key pair for this host.
 	prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, p.randomness)
@@ -44,10 +85,12 @@ func (p *Peer) NewHost() (host.Host, error) {
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", p.port))
 
 	// libp2p.New constructs a new libp2p Host.
-	// Other options can be added here.
+	// Enables NAT traversal for seamless connectivity on local networks
 	return libp2p.New(
 		libp2p.ListenAddrs(sourceMultiAddr),
 		libp2p.Identity(prvKey),
+		libp2p.EnableNATService(),   // Enable NAT traversal
+		libp2p.EnableHolePunching(), // Enable hole punching for NAT traversal
 	)
 }
 
@@ -58,13 +101,8 @@ func (p *Peer) getPID() protocol.ID {
 }
 
 func (p *Peer) Start(_ context.Context, h host.Host, handshaker *auth.GPGHandshake, filePath string, handler network.StreamHandler) error {
-	// Set a function as stream handler.
-	// This function is called when a peer connects, and starts a stream with this protocol.
-	// Only applies on the receiving side.
-	// Use makeStreamHandler to create a handler that performs handshake and file transfer
 	h.SetStreamHandler(p.getPID(), makeStreamHandler(handshaker, filePath))
 
-	// Let's get the actual TCP port from our listen multiaddr, in case we're using 0 (default; random available port).
 	var port string
 	for _, la := range h.Network().ListenAddresses() {
 		if p, err := la.ValueForProtocol(multiaddr.P_TCP); err == nil {
@@ -77,10 +115,22 @@ func (p *Peer) Start(_ context.Context, h host.Host, handshaker *auth.GPGHandsha
 		return errors.New("was not able to find actual local port")
 	}
 
-	log.Printf("Run '%s -d /ip4/127.0.0.1/tcp/%v/p2p/%s' on another console.\n", AppName, port, h.ID())
-	log.Println("You can replace 127.0.0.1 with public IP as well.")
-	log.Println("Waiting for incoming connection")
-	log.Println()
+	localIP, err := getLocalIP()
+	if err != nil {
+		log.Printf("Warning: Could not get local IP: %v, using 127.0.0.1\n", err)
+		localIP = "127.0.0.1"
+	}
+
+	addr := fmt.Sprintf("/ip4/%s/tcp/%s/p2p/%s", localIP, port, h.ID())
+
+	if err := copyToClipboard(addr); err != nil {
+		log.Printf("Warning: Could not copy to clipboard: %v\n", err)
+	} else {
+		log.Println("Connection address copied to clipboard!")
+	}
+
+	log.Printf("Share this address: %s\n", addr)
+	log.Println("Waiting for incoming connection...")
 
 	return nil
 }
@@ -92,26 +142,20 @@ func (p *Peer) Connect(h host.Host, destination string, handshaker *auth.GPGHand
 	}
 	log.Println()
 
-	// Turn the destination into a multiaddr.
 	maddr, err := multiaddr.NewMultiaddr(destination)
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	}
 
-	// Extract the peer ID from the multiaddr.
 	info, err := peer.AddrInfoFromP2pAddr(maddr)
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	}
 
-	// Add the destination's peer multiaddress in the peerstore.
-	// This will be used during connection and stream creation by libp2p.
 	h.Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
 
-	// Start a stream with the destination.
-	// Multiaddress of the destination peer is fetched from the peerstore using 'peerId'.
 	s, err := h.NewStream(context.Background(), info.ID, p.getPID())
 	if err != nil {
 		log.Println(err)
@@ -119,14 +163,12 @@ func (p *Peer) Connect(h host.Host, destination string, handshaker *auth.GPGHand
 	}
 	log.Println("Established connection to destination")
 
-	// Perform handshake before proceeding
 	if !handshaker.Handshake(s) {
 		log.Println("Handshake failed, closing connection")
 		s.Reset()
 		return nil, fmt.Errorf("handshake failed")
 	}
 
-	// Create a buffered stream so that read and writes are non-blocking.
 	rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
 
 	return rw, nil

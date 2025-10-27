@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"github.com/Noah-Wilderom/secretshare/auth"
+	"log"
 
+	"github.com/Noah-Wilderom/secretshare/auth"
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
@@ -32,24 +33,24 @@ func NewServer(peer *Peer, destination string, filePath string, handshaker *auth
 
 func (s *Server) Start(ctx context.Context) error {
 	if s.destination == "" {
-		// Host mode - start listening for incoming connections
 		err := s.peer.Start(ctx, s.host, s.handshaker, s.filePath, nil)
 		if err != nil {
 			return err
 		}
 	} else {
-		// Client mode - connect to destination and perform handshake
 		rw, err := s.peer.Connect(s.host, s.destination, s.handshaker)
 		if err != nil {
 			return err
 		}
 
-		// Receive the file from host
 		if err := receiveFile(rw); err != nil {
 			return err
 		}
+
+		log.Println("File transfer completed, closing connection...")
+		s.host.Close()
+		return nil
 	}
 
-	// Wait forever
 	select {}
 }
