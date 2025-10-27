@@ -27,6 +27,30 @@ func GetGPGFingerprint() (string, error) {
 	return "", fmt.Errorf("no GPG fingerprint found")
 }
 
+// ExportPublicKey exports the public key for a given fingerprint in ASCII armor format
+func ExportPublicKey(fingerprint string) (string, error) {
+	cmd := exec.Command("gpg", "--armor", "--export", fingerprint)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to export public key: %w", err)
+	}
+	return string(output), nil
+}
+
+// ImportPublicKey imports a public key into the GPG keyring
+func ImportPublicKey(publicKey string) error {
+	cmd := exec.Command("gpg", "--import", "--batch")
+	cmd.Stdin = bytes.NewReader([]byte(publicKey))
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to import public key: %v\nStderr: %s", err, stderr.String())
+	}
+	return nil
+}
+
 func EncryptFile(filePath string, recipientFingerprint string) ([]byte, error) {
 	fileData, err := os.ReadFile(filePath)
 	if err != nil {

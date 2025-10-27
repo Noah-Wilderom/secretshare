@@ -91,6 +91,29 @@ func (h *GPGHandshake) Handshake(s network.Stream) bool {
 			return false
 		}
 
+		// Read the public key from client
+		var publicKeyBuilder strings.Builder
+		for {
+			line, err := rw.ReadString('\n')
+			if err != nil {
+				log.Printf("Failed to read public key: %v\n", err)
+				return false
+			}
+			if strings.Contains(line, "<<<END_PUBLIC_KEY>>>") {
+				break
+			}
+			publicKeyBuilder.WriteString(line)
+		}
+		publicKey := publicKeyBuilder.String()
+
+		// Import the client's public key
+		log.Println("Importing client's GPG public key...")
+		if err := ImportPublicKey(publicKey); err != nil {
+			log.Printf("Failed to import client's public key: %v\n", err)
+			return false
+		}
+		log.Println("Successfully imported client's public key")
+
 		h.clientFingerprint = fingerprint
 
 		accepted := promptUserAcceptance(gpgUserName)
@@ -127,6 +150,13 @@ func (h *GPGHandshake) Handshake(s network.Stream) bool {
 
 		log.Printf("Using GPG identity: %s (fingerprint: %s)\n", gpgUserID, fingerprint)
 
+		// Export public key for the host to import
+		publicKey, err := ExportPublicKey(fingerprint)
+		if err != nil {
+			log.Printf("Failed to export public key: %v\n", err)
+			return false
+		}
+
 		_, err = rw.WriteString(gpgUserID + "\n")
 		if err != nil {
 			log.Printf("Failed to send GPG user ID: %v\n", err)
@@ -136,6 +166,13 @@ func (h *GPGHandshake) Handshake(s network.Stream) bool {
 		_, err = rw.WriteString(fingerprint + "\n")
 		if err != nil {
 			log.Printf("Failed to send GPG fingerprint: %v\n", err)
+			return false
+		}
+
+		// Send the public key (use a delimiter to mark the end)
+		_, err = rw.WriteString(publicKey + "<<<END_PUBLIC_KEY>>>\n")
+		if err != nil {
+			log.Printf("Failed to send public key: %v\n", err)
 			return false
 		}
 		rw.Flush()
