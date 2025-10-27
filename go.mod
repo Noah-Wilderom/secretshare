@@ -1,8 +1,6 @@
 module github.com/Noah-Wilderom/secretshare
 
-go 1.24.6
-
-toolchain go1.24.9
+go 1.25
 
 require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
