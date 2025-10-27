@@ -11,6 +11,13 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 )
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 type GPGHandshake struct {
 	isHost            bool
 	clientFingerprint string // Stores the client's GPG fingerprint after successful handshake
@@ -108,11 +115,26 @@ func (h *GPGHandshake) Handshake(s network.Stream) bool {
 
 		// Import the client's public key
 		log.Println("Importing client's GPG public key...")
+		log.Printf("Public key length: %d bytes\n", len(publicKey))
+		log.Printf("First 100 chars: %s\n", publicKey[:min(100, len(publicKey))])
+
 		if err := ImportPublicKey(publicKey); err != nil {
 			log.Printf("Failed to import client's public key: %v\n", err)
 			return false
 		}
 		log.Println("Successfully imported client's public key")
+
+		// Verify the key actually exists in the keyring
+		exists, err := VerifyKeyExists(fingerprint)
+		if err != nil {
+			log.Printf("Error verifying key import: %v\n", err)
+			return false
+		}
+		if !exists {
+			log.Printf("Key import reported success but key %s not found in keyring!\n", fingerprint)
+			return false
+		}
+		log.Printf("Verified key %s exists in keyring\n", fingerprint)
 
 		h.clientFingerprint = fingerprint
 

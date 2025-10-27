@@ -26,7 +26,8 @@ func main() {
 
 	err := clipboard.Init()
 	if err != nil {
-		panic(err)
+		log.Printf("Warning: Clipboard unavailable: %v\n", err)
+		log.Println("Clipboard functionality will be disabled, but file transfer will work normally.")
 	}
 
 	sourcePort := flag.Int("sp", 0, "Source port number")
